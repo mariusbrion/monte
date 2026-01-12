@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulateur de Patrimoine Monte Carlo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        body {
+            background-color: #0e1117;
+            color: #fafafa;
+        }
+        .sidebar {
+            background-color: #161b22;
+        }
+        .card {
+            background-color: #1c2128;
+            border: 1px solid #30363d;
+        }
+        input, select {
+            background-color: #0d1117 !important;
+            color: white !important;
+            border: 1px solid #30363d !important;
+        }
+        .metric-value {
+            color: #58a6ff;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <div class="flex flex-col md:flex-row">
+        <!-- Barre latérale / Paramètres -->
+        <aside class="sidebar w-full md:w-80 p-6 md:h-screen md:sticky md:top-0 overflow-y-auto border-r border-gray-700">
+            <h2 class="text-xl font-bold mb-6 flex items-center">
+                <span class="mr-2">📈</span> Paramètres
+            </h2>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Capital Initial (€)</label>
+                    <input type="number" id="capInitial" value="10000" step="1000" class="w-full p-2 rounded">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">DCA Mensuel (€)</label>
+                    <input type="number" id="dcaMensuel" value="500" step="50" class="w-full p-2 rounded">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Durée (ans) : <span id="valDuree">20</span></label>
+                    <input type="range" id="dureeAns" min="1" max="40" value="20" class="w-full cursor-pointer">
+                </div>
+
+                <hr class="border-gray-700 my-4">
+                <h3 class="text-sm font-semibold uppercase text-gray-400">Configuration Marché</h3>
+                
+                <div>
+                    <label class="block text-sm font-medium mb-1">Rendement moyen μ (%) : <span id="valRendement">7</span>%</label>
+                    <input type="range" id="rendementMoyen" min="0" max="15" step="0.5" value="7" class="w-full cursor-pointer">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Volatilité σ (%) : <span id="valVolat">15</span>%</label>
+                    <input type="range" id="volatilite" min="0" max="30" step="1" value="15" class="w-full cursor-pointer">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Inflation (%) : <span id="valInflation">2</span>%</label>
+                    <input type="range" id="inflation" min="0" max="10" step="0.5" value="2" class="w-full cursor-pointer">
+                </div>
+
+                <button id="btnSimuler" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded transition mt-4">
+                    Lancer la simulation
+                </button>
+            </div>
+        </aside>
+
+        <!-- Contenu Principal -->
+        <main class="flex-1 p-4 md:p-8">
+            <div id="welcomeScreen">
+                <h1 class="text-3xl font-bold mb-4">Simulateur de Patrimoine Monte Carlo</h1>
+                <p class="text-gray-400 mb-8">Utilisez les paramètres à gauche pour projeter l'évolution de votre capital selon 1 000 scénarios aléatoires.</p>
+                <div class="card p-8 rounded-lg text-center">
+                    <p class="text-lg">Cliquez sur <strong>"Lancer la simulation"</strong> pour commencer.</p>
+                </div>
+            </div>
+
+            <div id="resultsScreen" class="hidden space-y-8">
+                <h1 class="text-3xl font-bold">📊 Résultats de la Simulation</h1>
+
+                <!-- Cartes Métriques -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="card p-4 rounded-lg shadow-inner">
+                        <div class="text-gray-400 text-sm">Médiane (Nominal)</div>
+                        <div id="metricMedNom" class="metric-value">0 €</div>
+                    </div>
+                    <div class="card p-4 rounded-lg shadow-inner">
+                        <div class="text-gray-400 text-sm">Médiane (Réel)</div>
+                        <div id="metricMedReal" class="metric-value text-green-400">0 €</div>
+                    </div>
+                    <div class="card p-4 rounded-lg shadow-inner">
+                        <div class="text-gray-400 text-sm">Total Investi</div>
+                        <div id="metricTotalInv" class="metric-value text-gray-200">0 €</div>
+                    </div>
+                    <div class="card p-4 rounded-lg shadow-inner">
+                        <div class="text-gray-400 text-sm">Max Drawdown Moyen</div>
+                        <div id="metricMDD" class="metric-value text-red-400">0 %</div>
+                    </div>
+                </div>
+
+                <!-- Graphique Trajectoires -->
+                <div class="card p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold mb-4">📈 Évolution (100 premiers scénarios)</h3>
+                    <div id="chartTrajectories" style="height: 450px;"></div>
+                </div>
+
+                <!-- Bas de page : Distribution + Table -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="card p-4 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-4">🎯 Distribution du capital final (Réel)</h3>
+                        <div id="chartHist" style="height: 350px;"></div>
+                    </div>
+                    <div class="card p-4 rounded-lg overflow-hidden">
+                        <h3 class="text-lg font-semibold mb-4">📋 Percentiles</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="border-b border-gray-700 bg-gray-800">
+                                    <tr>
+                                        <th class="p-3 text-sm">Percentile</th>
+                                        <th class="p-3 text-sm">Nominal</th>
+                                        <th class="p-3 text-sm">Réel</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tablePercentiles">
+                                    <!-- Rempli par JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="p-4 mt-4 bg-blue-900/20 text-blue-300 text-xs rounded border border-blue-800">
+                            <strong>Note :</strong> Le 10ème percentile représente un scénario pessimiste (90% de chances de faire mieux).
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- UTILITAIRES ---
+        // Box-Muller transform pour générer une distribution normale Standard
+        function randomNormal() {
+            let u = 0, v = 0;
+            while(u === 0) u = Math.random();
+            while(v === 0) v = Math.random();
+            return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        }
+
+        function formatEuro(val) {
+            return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(val);
+        }
+
+        function getPercentile(arr, p) {
+            const sorted = [...arr].sort((a, b) => a - b);
+            const pos = (sorted.length - 1) * p / 100;
+            const base = Math.floor(pos);
+            const rest = pos - base;
+            if (sorted[base + 1] !== undefined) {
+                return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+            } else {
+                return sorted[base];
+            }
+        }
+
+        // --- ELEMENTS DOM ---
+        const inputs = ['dureeAns', 'rendementMoyen', 'volatilite', 'inflation'];
+        inputs.forEach(id => {
+            const input = document.getElementById(id);
+            const display = document.getElementById('val' + id.charAt(0).toUpperCase() + id.slice(1));
+            input.addEventListener('input', () => { display.innerText = input.value; });
+        });
+
+        const btn = document.getElementById('btnSimuler');
+        
+        // --- LOGIQUE DE SIMULATION ---
+        btn.addEventListener('click', () => {
+            const initialCap = parseFloat(document.getElementById('capInitial').value);
+            const dca = parseFloat(document.getElementById('dcaMensuel').value);
+            const years = parseInt(document.getElementById('dureeAns').value);
+            const mu = parseFloat(document.getElementById('rendementMoyen').value) / 100;
+            const sigma = parseFloat(document.getElementById('volatilite').value) / 100;
+            const infl = parseFloat(document.getElementById('inflation').value) / 100;
+
+            const nSims = 1000;
+            const months = years * 12;
+            const dt = 1/12;
+
+            // Paramètres mensuels
+            const mu_monthly = (mu - 0.5 * Math.pow(sigma, 2)) * dt;
+            const sigma_monthly = sigma * Math.sqrt(dt);
+
+            // Structure de stockage [mois][simulation]
+            let nomTraj = Array.from({ length: months + 1 }, () => new Float64Array(nSims));
+            let realTraj = Array.from({ length: months + 1 }, () => new Float64Array(nSims));
+            let maxDrawdowns = new Float64Array(nSims);
+            let peaks = new Float64Array(nSims).fill(initialCap);
+
+            // Initialisation t=0
+            for(let s=0; s<nSims; s++) {
+                nomTraj[0][s] = initialCap;
+                realTraj[0][s] = initialCap;
+            }
+
+            // Simulation
+            for (let t = 1; t <= months; t++) {
+                const inflationFactor = Math.pow(1 + infl, t / 12);
+                for (let s = 0; s < nSims; s++) {
+                    const rnd = Math.exp(mu_monthly + sigma_monthly * randomNormal());
+                    nomTraj[t][s] = (nomTraj[t-1][s] + dca) * rnd;
+                    realTraj[t][s] = nomTraj[t][s] / inflationFactor;
+
+                    // Calcul Drawdown progressif
+                    if (nomTraj[t][s] > peaks[s]) peaks[s] = nomTraj[t][s];
+                    const currentDD = (nomTraj[t][s] - peaks[s]) / peaks[s];
+                    if (currentDD < maxDrawdowns[s]) maxDrawdowns[s] = currentDD;
+                }
+            }
+
+            updateUI(nomTraj, realTraj, maxDrawdowns, initialCap, dca, years);
+        });
+
+        function updateUI(nomTraj, realTraj, maxDrawdowns, initialCap, dca, years) {
+            document.getElementById('welcomeScreen').classList.add('hidden');
+            document.getElementById('resultsScreen').classList.remove('hidden');
+
+            const finalNom = nomTraj[nomTraj.length - 1];
+            const finalReal = realTraj[realTraj.length - 1];
+            const months = nomTraj.length - 1;
+
+            // Métriques
+            document.getElementById('metricMedNom').innerText = formatEuro(getPercentile(finalNom, 50));
+            document.getElementById('metricMedReal').innerText = formatEuro(getPercentile(finalReal, 50));
+            document.getElementById('metricTotalInv').innerText = formatEuro(initialCap + (dca * months));
+            const avgMDD = Array.from(maxDrawdowns).reduce((a, b) => a + b, 0) / maxDrawdowns.length;
+            document.getElementById('metricMDD').innerText = (avgMDD * 100).toFixed(2) + " %";
+
+            // Graphique Trajectoires (100 premières)
+            const xValues = Array.from({ length: months + 1 }, (_, i) => i / 12);
+            const traces = [];
+            for (let i = 0; i < 100; i++) {
+                traces.push({
+                    x: xValues,
+                    y: Array.from(nomTraj).map(row => row[i]),
+                    mode: 'lines',
+                    line: { width: 1, color: 'rgba(88, 166, 255, 0.2)' },
+                    showlegend: false,
+                    hoverinfo: 'none'
+                });
+            }
+
+            // Médiane en surbrillance
+            const medianNom = Array.from({ length: months + 1 }, (_, t) => getPercentile(nomTraj[t], 50));
+            traces.push({
+                x: xValues,
+                y: medianNom,
+                mode: 'lines',
+                name: 'Médiane',
+                line: { width: 3, color: '#ffffff' }
+            });
+
+            const layoutDark = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                font: { color: '#8b949e' },
+                margin: { t: 20, r: 20, b: 40, l: 60 },
+                xaxis: { gridcolor: '#30363d', zerolinecolor: '#30363d' },
+                yaxis: { gridcolor: '#30363d', zerolinecolor: '#30363d' }
+            };
+
+            Plotly.newPlot('chartTrajectories', traces, layoutDark, { responsive: true });
+
+            // Histogramme
+            const histData = [{
+                x: Array.from(finalReal),
+                type: 'histogram',
+                marker: { color: '#58a6ff' },
+                opacity: 0.7
+            }];
+            Plotly.newPlot('chartHist', histData, { ...layoutDark, bargap: 0.05 }, { responsive: true });
+
+            // Table Percentiles
+            const percentiles = [10, 25, 50, 75, 90];
+            const tbody = document.getElementById('tablePercentiles');
+            tbody.innerHTML = "";
+            percentiles.forEach(p => {
+                const row = `
+                    <tr class="border-b border-gray-700 hover:bg-gray-800/50">
+                        <td class="p-3 font-medium">${p}th</td>
+                        <td class="p-3">${formatEuro(getPercentile(finalNom, p))}</td>
+                        <td class="p-3">${formatEuro(getPercentile(finalReal, p))}</td>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+        }
+    </script>
+</body>
+</html>
